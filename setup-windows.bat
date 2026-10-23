@@ -135,24 +135,28 @@ REM ============================================================
 echo [4/9] Locating ssh-keygen...
 set "KEYGEN_EXE="
 
-if exist "C:\Program Files\Git\usr\bin\ssh-keygen.exe" (
-    set "KEYGEN_EXE=C:\Program Files\Git\usr\bin\ssh-keygen.exe"
-    echo   [OK] Git ssh-keygen found.
+REM Prefer OpenSSH 7.7's ssh-keygen (same package as ssh.exe)
+if exist "C:\Program Files\OpenSSH\ssh-keygen.exe" (
+    set "KEYGEN_EXE=C:\Program Files\OpenSSH\ssh-keygen.exe"
+    echo   [OK] ssh-keygen found in OpenSSH.
 )
+REM Fall back to built-in OpenSSH on Windows 10+
 if not defined KEYGEN_EXE (
-    if "%IS_LEGACY%"=="1" (
-        echo   [ERROR] Git for Windows required on Windows %WIN_VER%.
-        echo   Download: https://git-scm.com/download/win
-        pause
-        exit /b 1
-    )
     if exist "%WINDIR%\System32\OpenSSH\ssh-keygen.exe" (
         set "KEYGEN_EXE=%WINDIR%\System32\OpenSSH\ssh-keygen.exe"
         echo   [OK] Built-in ssh-keygen found.
     )
 )
+REM Fall back to Git for Windows, if present
+if not defined KEYGEN_EXE (
+    if exist "C:\Program Files\Git\usr\bin\ssh-keygen.exe" (
+        set "KEYGEN_EXE=C:\Program Files\Git\usr\bin\ssh-keygen.exe"
+        echo   [OK] Git ssh-keygen found.
+    )
+)
 if not defined KEYGEN_EXE (
     echo   [ERROR] ssh-keygen not found.
+    echo   It should be in C:\Program Files\OpenSSH\ or %WINDIR%\System32\OpenSSH\
     pause
     exit /b 1
 )
