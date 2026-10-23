@@ -1,0 +1,42 @@
+# Normalize line endings across platforms
+* text=auto
+
+# Shell scripts must use LF (required for Termux and Linux)
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Windows batch files must use CRLF (required by cmd.exe)
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Windows-specific text files
+*.ps1   text eol=crlf
+
+# Documentation and config
+*.md    text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Keep shell scripts executable on checkout
+*.sh    export-ignore
+setup-termux.sh  text eol=lf
+
+# Binary files (never modify line endings)
+*.tar.gz  binary
+*.tgz     binary
+*.zip     binary
+*.7z      binary
+*.rar     binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.exe     binary
+*.dll     binary
+
+# GitHub linguist
+*.bat   linguist-language=Batchfile
+*.sh    linguist-language=Shell
