@@ -82,6 +82,14 @@ To place `setup-termux.sh` on the phone, either transfer via USB, or in Termux r
     wget https://raw.githubusercontent.com/vahidrezaa/vscode-remote-ssh-termux/main/setup-termux.sh
     chmod +x setup-termux.sh
 
+**Alternative to this step:** Instead of downloading now, you can run the script directly in step 5. Steps 3 and 4 are still required, because the public key comes from step 4. If you choose this, skip the download above and in step 5 run:
+
+    bash <(curl -fsSL https://raw.githubusercontent.com/vahidrezaa/vscode-remote-ssh-termux/main/setup-termux.sh)
+
+The script prompts for the VS Code commit and the public key. Do not use `curl ... | bash` for this: with a pipe, the script's own text occupies standard input and the prompts cannot read your answers. A pipe only works if you pass both arguments, without prompts:
+
+    curl -fsSL https://raw.githubusercontent.com/vahidrezaa/vscode-remote-ssh-termux/main/setup-termux.sh | bash -s -- "COMMIT" "PUBLIC_KEY"
+
 ### 3. Collect phone details
 
 In Termux on the phone, run:
@@ -151,19 +159,6 @@ Open VS Code. Press Ctrl+Shift+P, choose "Remote-SSH: Connect to Host", select "
 The VS Code server was already installed by `setup-termux.sh` in step 5. On first connection, VS Code detects the existing installation and starts it directly. No download is needed. Connection should complete in a few seconds.
 
 All files, compilation, and execution happen on the phone. The laptop only renders the editor.
-
-### Alternative: skip manual download
-
-If you already have the public key from step 4, you can run the phone setup directly without saving the script first:
-
-    bash <(curl -fsSL https://raw.githubusercontent.com/vahidrezaa/vscode-remote-ssh-termux/main/setup-termux.sh)
-
-The script prompts for the VS Code commit and the public key interactively. Do not write `curl ... | bash` for this: with a pipe, the script's own text occupies standard input and the prompts cannot read your answers. A pipe only works if you pass both arguments, without prompts:
-
-    curl -fsSL https://raw.githubusercontent.com/vahidrezaa/vscode-remote-ssh-termux/main/setup-termux.sh | bash -s -- "COMMIT" "PUBLIC_KEY"
-
-
-Note: this approach bypasses step 2. It runs the script with your user permissions immediately, without a local copy to review first. If you prefer to inspect the script before running it, use the manual method in step 2.
 
 
 ## How it works
