@@ -236,23 +236,57 @@ if exist "!VSCODE_DIR!\data" (
     echo   [OK] Installed mode, using the user profile settings.
 )
 
-REM Read version and commit from the VS Code CLI
+REM Read version and commit.
+REM Primary: parse product.json directly. Works even when VxKex prevents
+REM Code.exe from running in CLI mode on Windows 7.
+REM The path to product.json may be:
+REM   !VSCODE_DIR!\resources\app\product.json               (standard)
+REM   !VSCODE_DIR!\[short-commit]\resources\app\product.json  (custom layout)
+REM   or elsewhere under VSCODE_DIR.
+REM Fallback: code.cmd --version (works on 1.70.x and Win10/11).
 set "VSC_VER="
 set "VSC_COMMIT="
-if exist "!VSCODE_CLI!" (
-    echo   Reading VS Code version...
-    set "VSC_N=0"
-    for /f "delims=" %%L in ('""!VSCODE_CLI!" --version"') do (
-        set /a VSC_N+=1
-        if "!VSC_N!"=="1" set "VSC_VER=%%L"
-        if "!VSC_N!"=="2" set "VSC_COMMIT=%%L"
+set "PRODUCT_JSON="
+
+for /f "delims=" %%P in ('dir /s /b "!VSCODE_DIR!\product.json" 2^>nul') do (
+    if not defined PRODUCT_JSON set "PRODUCT_JSON=%%P"
+)
+
+if defined PRODUCT_JSON (
+    for /f "tokens=2 delims=:," %%A in ('findstr /C:"\"version\"" "!PRODUCT_JSON!"') do (
+        if not defined VSC_VER (
+            set "VSC_VER=%%A"
+            set "VSC_VER=!VSC_VER: =!"
+            set "VSC_VER=!VSC_VER:"=!"
+        )
+    )
+    for /f "tokens=2 delims=:," %%A in ('findstr /C:"\"commit\"" "!PRODUCT_JSON!"') do (
+        if not defined VSC_COMMIT (
+            set "VSC_COMMIT=%%A"
+            set "VSC_COMMIT=!VSC_COMMIT: =!"
+            set "VSC_COMMIT=!VSC_COMMIT:"=!"
+        )
     )
 )
+
+if not defined VSC_COMMIT (
+    if exist "!VSCODE_CLI!" (
+        echo   Reading VS Code version via code.cmd...
+        set "VSC_N=0"
+        for /f "delims=" %%L in ('""!VSCODE_CLI!" --version 2^>nul"') do (
+            set /a VSC_N+=1
+            if "!VSC_N!"=="1" set "VSC_VER=%%L"
+            if "!VSC_N!"=="2" set "VSC_COMMIT=%%L"
+        )
+    )
+)
+
 if defined VSC_COMMIT (
     if "!VSC_COMMIT:~39,1!"=="" set "VSC_COMMIT="
 )
 if defined VSC_COMMIT (
     echo   [OK] VS Code version !VSC_VER!, commit !VSC_COMMIT!
+    if defined PRODUCT_JSON echo        From: !PRODUCT_JSON!
 ) else (
     echo   [WARN] Could not read the VS Code commit.
     echo          Open VS Code, Help, About, and copy the Commit value.
