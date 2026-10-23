@@ -183,7 +183,7 @@ The hard problems are on the phone side, not the laptop side. Any SSH-capable cl
 - The VS Code server on the phone must be built from the same commit as the VS Code on the laptop. After updating VS Code on the laptop, re-run `setup-termux.sh` with the new commit.
 - Never run patchelf on the server binary. patchelf corrupts ELF files on Android and causes SIGSEGV. The setup script intentionally avoids patchelf.
 - The SSH key is required. The `command="$HOME/ssh-login.sh ..."` prefix in `authorized_keys` only executes when authentication uses a key, not a password. Without the key, proot never starts.
-- VS Code internal terminal on Windows 7, 8, 8.1. ConPTY, which VS Code uses for its built-in terminal, requires Windows 10. Opening the terminal may fail with "Cannot launch conpty". Use a separate PuTTY session for running commands. This does not affect Remote-SSH and does not occur on Windows 10 or 11.
+- Terminal. After connecting with Remote-SSH, open a terminal with Ctrl+` as usual. Terminals in the remote window run on the phone over SSH and work on all Windows versions. This is independent of ConPTY. A local shell in a non-remote window is a separate VS Code feature and is not part of this setup.
 - C/C++ extension crashes under proot. The official Microsoft C/C++ extension uses a language server that segfaults on proot, on any Windows version. Use clangd instead. The Windows setup script adds clangd to `remote.SSH.defaultExtensions` so it installs automatically on the remote.
 - After phone reboot, only one command is needed: `sshd`. Everything else persists.
 - Backup the SSH private key at `%USERPROFILE%\.ssh\termux_key`. If lost, regenerate it and update `authorized_keys` on the phone.
@@ -210,10 +210,6 @@ The hard problems are on the phone side, not the laptop side. Any SSH-capable cl
 **SSH installation not found in VS Code**
 - Cause: VS Code is using Git Bash's ssh.exe, which requires VirtualAlloc2.
 - Fix: set `remote.SSH.path` to `C:\Program Files\OpenSSH\ssh.exe`.
-
-**Cannot launch conpty**
-- Cause: VS Code built-in terminal on Windows 7, 8, 8.1.
-- Fix: use a separate PuTTY session for terminal commands. Remote-SSH is unaffected.
 
 ### All Windows versions
 
