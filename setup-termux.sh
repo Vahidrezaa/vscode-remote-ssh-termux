@@ -5,7 +5,13 @@
 #   bash setup-termux.sh                              # interactive
 #   bash setup-termux.sh "1.143.1" "ssh-rsa AAAA..."  # version + key
 #   bash setup-termux.sh "latest"   "ssh-rsa AAAA..."  # auto-detect version
-#   bash setup-termux.sh "<commit>"  "ssh-rsa AAAA..."  # exact commit
+#   bash setup-termux.sh "<commit>"  "ssh-rsa AAAA..."  # exact commit (recommended)
+#
+# The server commit must match the commit of VS Code on the laptop exactly.
+# setup-windows.bat prints it, or run "code --version" (2nd line) on the laptop.
+#
+# Interactive mode needs a terminal on stdin, so do NOT run it as "curl ... | bash".
+# Use:  bash <(curl -fsSL URL)   or   curl -fsSL URL | bash -s -- "<commit>" "<key>"
 
 set -u
 
@@ -56,9 +62,11 @@ PUBKEY="${2:-}"
 
 if [ -z "$VSCODE_INPUT" ]; then
     echo "Which VS Code is on your laptop?"
-    echo "  Open VS Code -> Help -> About"
-    echo "  Copy 'Version' (e.g. 1.143.1) OR 'Commit' (40-char hex)"
-    echo "  Or type 'latest' to auto-detect"
+    echo "  Best: paste the 40-character commit ID."
+    echo "  setup-windows.bat prints it, or run 'code --version' (2nd line),"
+    echo "  or open VS Code -> Help -> About -> 'Commit'."
+    echo "  You can also enter a version (e.g. 1.143.1) or 'latest', but the"
+    echo "  resulting commit must match your laptop exactly, so double-check it."
     echo
     VSCODE_INPUT=$(prompt "Version or commit")
 fi
@@ -79,12 +87,15 @@ ok "Public key format OK."
 step "Resolving VS Code commit"
 
 VSCODE_COMMIT=""
+INPUT_KIND="version"
 
 if echo "$VSCODE_INPUT" | grep -qE '^[a-f0-9]{40}$'; then
     VSCODE_COMMIT="$VSCODE_INPUT"
+    INPUT_KIND="commit"
     info "Input is a commit ID."
 
 elif [ "$VSCODE_INPUT" = "latest" ]; then
+    INPUT_KIND="latest"
     info "Querying latest from Microsoft API..."
     API_RESPONSE=$(wget -qO- "https://update.code.visualstudio.com/api/update/server-linux-$ARCH/stable/latest" 2>/dev/null || true)
     if [ -z "$API_RESPONSE" ]; then
@@ -104,10 +115,17 @@ else
         echo "Open VS Code -> Help -> About, copy the 'Commit' value."
         VSCODE_COMMIT=$(prompt "Commit ID")
         echo "$VSCODE_COMMIT" | grep -qE '^[a-f0-9]{40}$' || die "Invalid commit ID."
+        INPUT_KIND="commit"
     fi
 fi
 
 ok "Commit: $VSCODE_COMMIT"
+
+if [ "$INPUT_KIND" != "commit" ]; then
+    warn "Commit was resolved from '$VSCODE_INPUT' through Microsoft's update API."
+    warn "This mapping is unverified. Make sure it equals the commit of the VS Code"
+    warn "on your laptop (setup-windows.bat, 'code --version', or Help -> About)."
+fi
 
 if [ "$VSCODE_COMMIT" != "$TESTED_COMMIT" ]; then
     warn "This commit differs from tested version ($TESTED_COMMIT)."
@@ -133,18 +151,23 @@ dpkg -s glibc >/dev/null 2>&1 || pkg install -y glibc >/dev/null 2>&1 || die "Fa
 ok "Packages installed."
 
 step "Backing up existing setup"
-NEEDS_BACKUP=0
-[ -f "$HOME/ssh-login.sh" ] && NEEDS_BACKUP=1
-[ -d "$HOME/.fakebin" ] && NEEDS_BACKUP=1
-[ -f "$HOME/.ssh/authorized_keys" ] && NEEDS_BACKUP=1
-[ -d "$HOME/.vscode-server" ] && NEEDS_BACKUP=1
+# Only small, hand-edited files are backed up. The VS Code server itself is not,
+# because it can be re-extracted from the tarball or downloaded again.
+BACKUP_ITEMS=""
+[ -f "$HOME/ssh-login.sh" ]          && BACKUP_ITEMS="$BACKUP_ITEMS ssh-login.sh"
+[ -d "$HOME/.fakebin" ]              && BACKUP_ITEMS="$BACKUP_ITEMS .fakebin"
+[ -f "$HOME/.ssh/authorized_keys" ]  && BACKUP_ITEMS="$BACKUP_ITEMS .ssh/authorized_keys"
 
 BACKUP_PATH=""
-if [ "$NEEDS_BACKUP" = "1" ]; then
+if [ -n "$BACKUP_ITEMS" ]; then
     BACKUP_PATH="$HOME/vscode-setup-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
-    tar -czf "$BACKUP_PATH" -C "$HOME" \
-        ssh-login.sh .fakebin .ssh/authorized_keys .vscode-server 2>/dev/null || true
-    ok "Backup: $BACKUP_PATH"
+    # shellcheck disable=SC2086
+    if tar -czf "$BACKUP_PATH" -C "$HOME" $BACKUP_ITEMS; then
+        ok "Backup: $BACKUP_PATH"
+    else
+        warn "Backup failed, continuing without it."
+        BACKUP_PATH=""
+    fi
 else
     info "Fresh install, nothing to back up."
 fi
@@ -186,6 +209,13 @@ fi
 LOGIN_EOF
 chmod +x "$HOME/ssh-login.sh"
 ok "ssh-login.sh created."
+
+# ssh-login.sh creates ~/.fakebin/ln when it runs. Run it once now (with a
+# harmless command and no terminal) so the shim exists before verification.
+info "Running ssh-login.sh once to create ~/.fakebin/ln..."
+"$HOME/ssh-login.sh" true </dev/null || die "Test run of ssh-login.sh failed."
+[ -x "$HOME/.fakebin/ln" ] || die "~/.fakebin/ln was not created."
+ok "~/.fakebin/ln created."
 
 step "Writing ~/.ssh/authorized_keys"
 mkdir -p "$HOME/.ssh"
@@ -271,7 +301,11 @@ FAIL=0
 [ -x "$HOME/.fakebin/ln" ] || { err ".fakebin/ln missing"; FAIL=1; }
 grep -q '^command="' "$HOME/.ssh/authorized_keys" || { err "authorized_keys missing command="; FAIL=1; }
 [ -f "$SERVER_DIR/node" ] || { err "server node missing"; FAIL=1; }
-[ "$FAIL" = "0" ] && ok "All checks passed."
+if [ "$FAIL" = "0" ]; then
+    ok "All checks passed."
+else
+    die "Verification failed, see messages above."
+fi
 
 step "Setup complete"
 echo
@@ -280,10 +314,11 @@ echo "Server:  $SERVER_DIR"
 echo "Backup:  ${BACKUP_PATH:-none}"
 echo
 echo "Next steps on phone:"
-echo "  1. Set SSH password:  passwd"
-echo "  2. Start SSH server:  sshd"
-echo "  3. Phone IP:          getprop dhcp.wlan0.ipaddress"
-echo "  4. Username:          whoami"
+echo "  1. Start SSH server:  sshd   (re-run after every phone reboot)"
+echo "  2. Phone IP:          getprop dhcp.wlan0.ipaddress"
+echo "  3. Username:          whoami"
+echo
+echo "Optional: 'passwd' sets a password. VS Code connects with the SSH key only."
 echo
 echo "Then from VS Code: Ctrl+Shift+P -> Remote-SSH: Connect to Host -> termux-phone"
 echo
