@@ -9,7 +9,7 @@ This is useful when:
 - You have a spare Android phone that can be reused as a portable build server.
 - Cloud IDEs are blocked or unavailable on your network.
 
-Windows 7, 8, and 8.1 require VxKex NEXT and OpenSSH 7.7. Windows 10 and 11 work with the built-in OpenSSH client and need no extra compatibility tools.
+Windows 7, 8, and 8.1 require VxKex NEXT and an OpenSSH client. Version 7.7.2.0 is the most stable build confirmed on these systems, and later 8.x releases also work in practice. Windows 10 and 11 work with the built-in OpenSSH client and need no extra compatibility tools.
 
 
 ## Use cases
@@ -34,14 +34,13 @@ Windows 7, 8, and 8.1 require VxKex NEXT and OpenSSH 7.7. Windows 10 and 11 work
 
 ### Laptop (Windows 7, 8, 8.1 only)
 
-Windows 7, 8, and 8.1 need three extra components. Windows 10 and 11 do not.
+Windows 7, 8, and 8.1 need two extra components. Windows 10 and 11 do not.
 
 - VxKex NEXT: https://github.com/YuZhouRen86/VxKex-NEXT/releases
   Download the latest `KexSetup_Release_*.exe` from the Releases page and install it.
 - Win32-OpenSSH 7.7.2.0p1-Beta: https://github.com/PowerShell/Win32-OpenSSH/releases/download/v7.7.2.0p1-Beta/OpenSSH-Win64.zip
-  Extract to `C:\Program Files\OpenSSH\`.
-- Git for Windows: https://git-scm.com/download/win
-  Only needed for `ssh-keygen`.
+  Extract to `C:\Program Files\OpenSSH\`. This package includes both `ssh.exe` and `ssh-keygen.exe`.
+  Version 7.7 is the most stable build confirmed on Windows 7, 8, and 8.1. Later 8.x releases also work in practice. 9.x and newer may work depending on the specific build and system updates, but are not guaranteed. If `ssh -V` runs and you can connect, your version is fine.
 
 ### Laptop (Windows 10, 11 only)
 
@@ -58,14 +57,17 @@ No extra installation. The script uses the OpenSSH client that ships with Window
 
 ### 1. Prepare the laptop
 
-Install the following first:
+Any Windows:
 
-- VxKex Next
-- VS Code 1.143.1 (portable or installed)
-- Win32-OpenSSH 7.7.2.0p1-Beta, extracted to C:\Program Files\OpenSSH\
-- Git for Windows
+- VS Code 1.143.1 (portable or installed).
+- Same WiFi network as the phone.
 
-The setup script checks for these and stops with instructions if any are missing.
+Windows 7, 8, 8.1 only (skip this list on Windows 10 and 11):
+
+- VxKex NEXT: https://github.com/YuZhouRen86/VxKex-NEXT/releases
+- Win32-OpenSSH 7.7.2.0p1-Beta (or a newer version that works), extracted to `C:\Program Files\OpenSSH\`
+
+`setup-windows.bat` checks for the required components based on your Windows version and stops with instructions if any are missing. An OpenSSH version other than 7.7 only produces a warning.
 
 ### 2. Get the scripts
 
@@ -77,7 +79,7 @@ Download both scripts from this repository:
 To place `setup-termux.sh` on the phone, either transfer via USB, or in Termux run:
 
     pkg install wget
-    wget https://raw.githubusercontent.com/USERNAME/REPO/main/setup-termux.sh
+    wget https://raw.githubusercontent.com/vahidrezaa/vscode-remote-ssh-termux/main/setup-termux.sh
     chmod +x setup-termux.sh
 
 ### 3. Collect phone details
@@ -93,62 +95,75 @@ Note the IP address and username. The next step asks for both.
 
 Double-click `setup-windows.bat`. The script will:
 
-- Verify Windows 7, VxKex, OpenSSH, Git, and VS Code
+- Verify the required components for your Windows version
+- Find VS Code (common install locations, then `PATH`; it asks for the path to `Code.exe` if not found), detect portable mode, and print its version and commit
 - Ask for the phone IP and username from step 3
 - Ping the phone to confirm reachability
-- Generate an SSH key pair at %USERPROFILE%\.ssh\termux_key
-- Write or update ~/.ssh/config (will not overwrite an existing termux-phone entry)
+- Generate an SSH key pair at `%USERPROFILE%\.ssh\termux_key`
+- Write or update `~/.ssh/config` (will not overwrite an existing termux-phone entry)
 - Install the Remote-SSH extension
-- Merge required settings into settings.json (backup saved as settings.json.bak)
-- Print the SSH public key
+- Merge required settings into `settings.json` (backup saved as `settings.json.bak`). For portable VS Code, meaning a `data` folder next to `Code.exe`, the file is `data\user-data\User\settings.json`. Otherwise it is `%APPDATA%\Code\User\settings.json`.
+- Print the SSH public key and a ready-to-paste command for step 5
 
-Copy the printed public key. Step 5 needs it.
+Copy the printed command. Step 5 needs it.
 
-If Python is not installed, the script prints the required settings for manual addition.
+If Python is not found (`where python`) or the file cannot be parsed, the script prints the required settings, including the clangd entry in `remote.SSH.defaultExtensions`, for manual addition.
 
 ### 5. Run the phone setup
 
-In Termux, run the script with your VS Code version and the public key from step 4:
+In Termux, run the command printed at the end of step 4. It has this form:
 
-    bash setup-termux.sh "1.143.1" "ssh-rsa AAAA... user@host"
+    bash setup-termux.sh "e646868227c3e3a9e3f24277c8c7220be42c0be7" "ssh-rsa AAAA... user@host"
 
-The script will back up any existing configuration, install packages, create ~/ssh-login.sh and ~/.fakebin/ln, write ~/.ssh/authorized_keys, download and extract the VS Code server, fix shebangs, and verify that node runs under proot.
+The first argument is the VS Code commit (40 hex characters). Use the commit rather than the version number whenever you can: the server must match the commit of the VS Code on your laptop exactly. `setup-windows.bat` prints it, or run `code --version` (second line), or open Help, About. A version number such as `1.143.1` is resolved to a commit through Microsoft's update API, and that mapping is not verified, so the script warns you to double-check it.
 
-The script is idempotent. Running it again with the same version does not re-download or overwrite working files.
+The script will back up `~/ssh-login.sh`, `~/.fakebin/` and `~/.ssh/authorized_keys` (not the VS Code server itself, which can be rebuilt), install packages, create `~/ssh-login.sh` and `~/.fakebin/ln`, write `~/.ssh/authorized_keys`, download and extract the VS Code server, fix shebangs, install a `getconf` shim if none exists, and verify that node runs under proot.
 
-If you do not know the VS Code version, run the script without arguments; it will prompt for version, commit, or "latest".
+Running the script again with the same version does not re-download the server. It does regenerate `~/ssh-login.sh` and replaces `~/.ssh/authorized_keys` with the single key you pass in, so any other keys in that file are removed. The previous files are saved in `~/vscode-setup-backup-*.tar.gz`; delete old backups when you no longer need them.
+
+If you do not know the commit, run the script without arguments; it will prompt for commit, version, or "latest", and then for the public key.
 
 ### 6. Start SSH
 
 In Termux:
 
-    passwd
     sshd
 
-`passwd` sets the SSH password. `sshd` starts the SSH server. `sshd` must be re-run after every phone reboot; everything else persists.
+`sshd` starts the SSH server. It must be re-run after every phone reboot; everything else persists.
 
-### 7. Enable VxKex on Code.exe
+Setting a password with `passwd` is optional. VS Code connects with the SSH key only (the config uses `PreferredAuthentications publickey`), and a password login would skip `ssh-login.sh`, so it cannot be used for development.
 
-Right-click `Code.exe`, open Properties, go to the VxKex tab:
+### 7. Enable VxKex NEXT on Code.exe (Windows 7, 8, 8.1 only)
 
-- Enable VxKex for this program
-- Report a different version of Windows: Windows 10
+Skip this step on Windows 10 and 11.
 
-Click OK. This is only needed once, and only for launching VS Code. The setup scripts themselves do not require VxKex.
+Right-click `Code.exe`, open Properties, go to the VxKex NEXT tab:
+
+- Check "Enable VxKex for this program"
+- Set "Report a different version of Windows" to Windows 10
+
+Click OK. This only needs to be done once, and only for launching VS Code. The setup scripts do not require VxKex.
 
 ### 8. Connect
 
 Open VS Code. Press Ctrl+Shift+P, choose "Remote-SSH: Connect to Host", select "termux-phone".
 
-On first connection, VS Code downloads the server (around 200 MB). Wait for completion. After connection, VS Code opens with the phone as the remote workspace. All files, compilation, and execution happen on the phone.
+The VS Code server was already installed by `setup-termux.sh` in step 5. On first connection, VS Code detects the existing installation and starts it directly. No download is needed. Connection should complete in a few seconds.
 
-### Alternative: one-liner for the phone
+All files, compilation, and execution happen on the phone. The laptop only renders the editor.
 
-If you already have the public key from step 4, you can skip the manual download in step 2 and use:
+### Alternative: skip manual download
 
-    curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/setup-termux.sh | bash
+If you already have the public key from step 4, you can run the phone setup directly without saving the script first:
 
-The script prompts for version and public key interactively.
+    bash <(curl -fsSL https://raw.githubusercontent.com/vahidrezaa/vscode-remote-ssh-termux/main/setup-termux.sh)
+
+The script prompts for the VS Code commit and the public key interactively. Do not write `curl ... | bash` for this: with a pipe, the script's own text occupies standard input and the prompts cannot read your answers. A pipe only works if you pass both arguments, without prompts:
+
+    curl -fsSL https://raw.githubusercontent.com/vahidrezaa/vscode-remote-ssh-termux/main/setup-termux.sh | bash -s -- "COMMIT" "PUBLIC_KEY"
+
+
+Note: this approach bypasses step 2. It runs the script with your user permissions immediately, without a local copy to review first. If you prefer to inspect the script before running it, use the manual method in step 2.
 
 
 ## How it works
@@ -157,9 +172,9 @@ The setup uses four components. Two are only needed on legacy Windows.
 
 1. VxKex NEXT (Windows 7, 8, 8.1 only). Shims Windows 10 APIs that modern VS Code needs. VxKex NEXT explicitly lists VS Code among supported applications. Without it, VS Code 1.143.1 will not launch on these versions. Repository: https://github.com/YuZhouRen86/VxKex-NEXT
 
-2. Win32-OpenSSH 7.7 (Windows 7, 8, 8.1 only). The last OpenSSH build that works on these versions. Newer builds require VirtualAlloc2, which Windows 7, 8, and 8.1 do not have.
+2. Win32-OpenSSH (Windows 7, 8, 8.1 only). Version 7.7.2.0 is the most stable build confirmed on these systems. Later 8.x builds also work in practice; 9.x and newer may work depending on the build. Some newer builds reference VirtualAlloc2, which Windows 7, 8, and 8.1 do not provide; if that error appears, downgrade to 7.7.2.0.
 
-3. proot plus glibc (all Windows versions). The VS Code server requires glibc. Android uses bionic. The script installs glibc alongside bionic and wraps the server in proot so the linker finds the right libc without patching binaries. This is the core of the solution and is independent of the client's operating system.
+3. proot plus glibc (all Windows versions). The VS Code server requires glibc. Android uses bionic. The script installs glibc alongside bionic and wraps the server in proot so the linker finds the right libc without patching binaries. A small `getconf` shim also reports glibc 2.35 to the server's requirements check. This is the core of the solution and is independent of the client's operating system.
 
 4. fake ln (all Windows versions). Android filesystems reject hard links, which VS Code's installer uses for file locking. A small wrapper converts hard link attempts into symlinks. Also independent of the client OS.
 
@@ -168,8 +183,9 @@ The hard problems are on the phone side, not the laptop side. Any SSH-capable cl
 
 ## Important notes
 
-- Only tested end-to-end on Windows 7 SP1 with VS Code 1.143.1, VxKex NEXT, Termux aarch64 on Android 13. Windows 8, 8.1, 10, and 11 should work but are not verified. Other VS Code versions may work but are not verified.
 - VxKex NEXT is the maintained fork. The older `i486/VxKex` repository is not the one referenced by this project. Use https://github.com/YuZhouRen86/VxKex-NEXT/releases.
+- Version numbers in "Tested configuration" reflect the exact environment where end-to-end testing was done. They are not strict minimum or maximum requirements. If a newer OpenSSH build or VS Code version works on your system, use it.
+- The VS Code server on the phone must be built from the same commit as the VS Code on the laptop. After updating VS Code on the laptop, re-run `setup-termux.sh` with the new commit.
 - Never run patchelf on the server binary. patchelf corrupts ELF files on Android and causes SIGSEGV. The setup script intentionally avoids patchelf.
 - The SSH key is required. The `command="$HOME/ssh-login.sh ..."` prefix in `authorized_keys` only executes when authentication uses a key, not a password. Without the key, proot never starts.
 - VS Code internal terminal on Windows 7, 8, 8.1. ConPTY, which VS Code uses for its built-in terminal, requires Windows 10. Opening the terminal may fail with "Cannot launch conpty". Use a separate PuTTY session for running commands. This does not affect Remote-SSH and does not occur on Windows 10 or 11.
@@ -193,8 +209,8 @@ The hard problems are on the phone side, not the laptop side. Any SSH-capable cl
 - Fix: ensure `remote.SSH.useLocalServer` is `true` and `remote.SSH.useExecServer` is `false` in `settings.json`.
 
 **VirtualAlloc2 error when checking SSH**
-- Cause: modern OpenSSH on Windows 7, 8, or 8.1.
-- Fix: use Win32-OpenSSH 7.7.2.0.
+- Cause: the OpenSSH build references VirtualAlloc2, which Windows 7, 8, and 8.1 do not provide.
+- Fix: downgrade to Win32-OpenSSH 7.7.2.0. Newer 8.x builds often work; 9.x and later are more likely to trigger this error.
 
 **SSH installation not found in VS Code**
 - Cause: VS Code is using Git Bash's ssh.exe, which requires VirtualAlloc2.
@@ -208,15 +224,15 @@ The hard problems are on the phone side, not the laptop side. Any SSH-capable cl
 
 **ln: failed to create hard link**
 - Cause: Android filesystem rejects hard links.
-- Fix: verify that `~/.fakebin/ln` exists and is executable on the phone.
+- Fix: verify that `~/.fakebin/ln` exists and is executable on the phone. `setup-termux.sh` creates it and `ssh-login.sh` recreates it at every login; if it is missing, re-run `setup-termux.sh`.
 
 **Missing GLIBC >= 2.17**
-- Cause: VS Code server tried to patch itself with patchelf.
-- Fix: remove `VSCODE_SERVER_CUSTOM_GLIBC_LINKER`, `VSCODE_SERVER_CUSTOM_GLIBC_PATH`, and `VSCODE_SERVER_PATCHELF_PATH` from `ssh-login.sh`.
+- Cause: the server's requirements check could not read the glibc version, or an older `ssh-login.sh` still sets `VSCODE_SERVER_CUSTOM_GLIBC_LINKER`, `VSCODE_SERVER_CUSTOM_GLIBC_PATH` or `VSCODE_SERVER_PATCHELF_PATH`, which makes the server patch itself with patchelf.
+- Fix: on the phone, `getconf GNU_LIBC_VERSION` must print `glibc 2.35`. If it does not, delete `$PREFIX/bin/getconf` and re-run `setup-termux.sh`. The script installs its `getconf` shim only when no `getconf` exists, and it regenerates `ssh-login.sh` without those variables.
 
 **Segmentation fault when starting node**
 - Cause: patchelf was applied to `node`.
-- Fix: re-extract `node` from `vscode-server.tar.gz` and do not run patchelf.
+- Fix: re-extract `node` from `~/vscode-server.tar.gz` and do not run patchelf.
 
 **Remote extension host terminated unexpectedly**
 - Cause: `node` corrupted by patchelf.
@@ -231,13 +247,21 @@ The hard problems are on the phone side, not the laptop side. Any SSH-capable cl
 - Fix: disable C/C++ extension and use clangd instead.
 
 **Connection works but files appear empty**
-- Cause: SSH key authentication failed; session is running with password only, so `ssh-login.sh` did not execute and proot did not start.
+- Cause: SSH key authentication did not succeed, so the `command=` prefix in `authorized_keys` was not triggered and `ssh-login.sh` did not run.
 - Fix: verify `ssh -F ~/.ssh/config termux-phone echo OK` returns `OK` without asking for a password.
+
+**Settings are not applied with portable VS Code**
+- Cause: the settings were written to the wrong `settings.json`. Portable VS Code reads `data\user-data\User\settings.json` next to `Code.exe`, not the user profile.
+- Fix: `setup-windows.bat` uses the portable path when a `data` folder exists next to `Code.exe`. If you created that folder after running the script, run the script again.
+
+**Server does not start after updating VS Code**
+- Cause: the server on the phone was built from a different commit than the VS Code on the laptop.
+- Fix: run `code --version` on the laptop (second line is the commit) and re-run `setup-termux.sh` with that commit.
 
 
 ## What did not work
 
-For reference, the following approaches were tested and rejected during development. All testing was done on Windows 7 SP1 with VS Code 1.143.1 and Termux aarch64 on Android 13. Results on other configurations may differ.
+For reference, the following approaches were tested and rejected.
 
 - VS Code 1.70.3 with glibc patch. Version 1.70.3 predates the `VSCODE_SERVER_CUSTOM_GLIBC` variables (added in 1.82). The 1.70.3 server tarball was also removed from Microsoft's CDN.
 - `patchelf --set-interpreter` with `--set-rpath`. Causes SIGSEGV on Android.
@@ -247,9 +271,9 @@ For reference, the following approaches were tested and rejected during developm
 - `code-server`. Works but runs in the browser, not as native VS Code. Kept as a fallback.
 
 
-## Versions
+## Tested configuration
 
-Tested end-to-end:
+End-to-end tested:
 
 - Windows 7 SP1 with KB4474419 and KB4490628
 - VxKex NEXT from https://github.com/YuZhouRen86/VxKex-NEXT/releases
@@ -259,11 +283,13 @@ Tested end-to-end:
 - Termux glibc 2.35
 - Node on server v24.22.1
 - Architecture: aarch64 (arm64)
+- Android 13
 
 Expected to work but not verified:
 
 - Windows 8, 8.1, 10, 11
 - VS Code versions other than 1.143.1
+- OpenSSH 8.x and later, on Windows 7, 8, 8.1
 - Termux on armhf and x64
 
 
