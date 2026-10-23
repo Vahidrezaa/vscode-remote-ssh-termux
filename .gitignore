@@ -1,0 +1,54 @@
+# Operating system files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+._*
+
+# Editor and IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+
+# Backup files
+*.bak
+*.backup
+*.backup-*
+*.orig
+*.old
+*~
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.cache
+
+# Local setup artifacts (may contain personal paths)
+setup-termux.sh.local
+setup-windows.bat.local
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Archives and large files
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.rar
+
+# Local environment files
+.env
+.env.*
+!.env.example
