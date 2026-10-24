@@ -14,6 +14,28 @@ set "CONFIG_FILE=%SSH_DIR%\config"
 set "KEY_FILE=%SSH_DIR%\termux_key"
 set "PUB_FILE=%SSH_DIR%\termux_key.pub"
 
+REM ============================================================
+REM Arguments
+REM   --vscode-dir "folder"   use this VS Code folder, skip the search
+REM ============================================================
+set "ARG_VSCODE_DIR="
+:parse_args
+if "%~1"=="" goto :args_done
+if /i "%~1"=="--vscode-dir" (
+    if "%~2"=="" (
+        echo [ERROR] --vscode-dir needs a folder path.
+        exit /b 1
+    )
+    set "ARG_VSCODE_DIR=%~2"
+    shift
+    shift
+    goto :parse_args
+)
+echo [ERROR] Unknown argument: %~1
+echo Usage: setup-windows.bat [--vscode-dir "C:\path\to\VS Code"]
+exit /b 1
+:args_done
+
 REM NOTE: do not put unescaped parentheses in echo lines inside ( ... ) blocks.
 REM A closing parenthesis ends the block early and breaks the script.
 
@@ -184,47 +206,184 @@ REM ============================================================
 REM [5/9] Locate VS Code, detect portable mode, read version
 REM ============================================================
 echo [5/9] Locating VS Code...
-set "VSCODE_DIR="
-set "VSCODE_CLI="
+goto :s5_main
 
-REM 1. Common install locations
+REM ---- helper: add a candidate install folder ----------------
+REM Input:  %1 = folder that contains Code.exe
+REM Output: AC_INDEX = index of that folder in the CAND_n list
+REM         AC_NEW   = 1 if it was added, 0 if it was already listed
+:add_cand
+set "AC_NEW=0"
+set "AC_INDEX="
+set "AC_DIR=%~1"
+if not defined AC_DIR exit /b 0
+if "!AC_DIR:~-1!"=="\" set "AC_DIR=!AC_DIR:~0,-1!"
+if not exist "!AC_DIR!\Code.exe" exit /b 0
+for /l %%N in (1,1,!CAND_COUNT!) do (
+    if /i "!CAND_%%N!"=="!AC_DIR!" set "AC_INDEX=%%N"
+)
+if defined AC_INDEX exit /b 0
+set /a CAND_COUNT+=1
+set "CAND_!CAND_COUNT!=!AC_DIR!"
+set "AC_INDEX=!CAND_COUNT!"
+set "AC_NEW=1"
+exit /b 0
+
+REM ---- helper: read version and commit of candidate %1 --------
+REM Reads product.json directly, because VxKex can block the CLI.
+REM Lookup order: standard layout, then one folder level down,
+REM then a recursive dir /s /b search.
+REM Output: CAND_V_n, CAND_C_n, CAND_L_n, CAND_P_n
+:read_info
+set "RI_DIR=!CAND_%~1!"
+set "RI_PJ="
+set "RI_APP="
+set "RI_VER="
+set "RI_COMMIT="
+if exist "!RI_DIR!\resources\app\product.json" set "RI_PJ=!RI_DIR!\resources\app\product.json"
+if not defined RI_PJ (
+    for /f "delims=" %%S in ('dir /b /ad /o-d "!RI_DIR!" 2^>nul') do (
+        if not defined RI_PJ if exist "!RI_DIR!\%%S\resources\app\product.json" set "RI_PJ=!RI_DIR!\%%S\resources\app\product.json"
+    )
+)
+if not defined RI_PJ (
+    for /f "delims=" %%P in ('dir /s /b "!RI_DIR!\product.json" 2^>nul ^| findstr /V /I /C:"\data\user-data" /C:"\data\extensions" /C:"\node_modules"') do (
+        if not defined RI_PJ set "RI_PJ=%%P"
+    )
+)
+if defined RI_PJ (
+    for %%F in ("!RI_PJ!") do set "RI_APP=%%~dpF"
+    for /f "usebackq tokens=1,* delims=:" %%A in (`findstr /C:""commit"" "!RI_PJ!"`) do (
+        set "RV=%%B"
+        set "RV=!RV:"=!"
+        set "RV=!RV:,=!"
+        set "RV=!RV: =!"
+        if not defined RI_COMMIT if not "!RV:~39,1!"=="" if "!RV:~40,1!"=="" set "RI_COMMIT=!RV!"
+    )
+    REM Version: package.json first, it has a single top-level version key
+    if exist "!RI_APP!package.json" (
+        for /f "usebackq tokens=1,* delims=:" %%A in (`findstr /C:""version"" "!RI_APP!package.json"`) do (
+            set "RV=%%B"
+            set "RV=!RV:"=!"
+            set "RV=!RV:,=!"
+            set "RV=!RV: =!"
+            if not defined RI_VER (
+                echo !RV!| findstr /R "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
+                if not errorlevel 1 set "RI_VER=!RV!"
+            )
+        )
+    )
+    if not defined RI_VER (
+        for /f "usebackq tokens=1,* delims=:" %%A in (`findstr /C:""version"" "!RI_PJ!"`) do (
+            set "RV=%%B"
+            set "RV=!RV:"=!"
+            set "RV=!RV:,=!"
+            set "RV=!RV: =!"
+            if not defined RI_VER (
+                echo !RV!| findstr /R "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
+                if not errorlevel 1 set "RI_VER=!RV!"
+            )
+        )
+    )
+)
+set "RI_LABEL=product.json not found or not readable"
+if defined RI_COMMIT set "RI_LABEL=commit !RI_COMMIT!"
+if defined RI_COMMIT if defined RI_VER set "RI_LABEL=version !RI_VER!, commit !RI_COMMIT!"
+if not defined RI_COMMIT if defined RI_VER set "RI_LABEL=version !RI_VER!, commit not readable"
+set "CAND_V_%~1=!RI_VER!"
+set "CAND_C_%~1=!RI_COMMIT!"
+set "CAND_L_%~1=!RI_LABEL!"
+set "CAND_P_%~1="
+if exist "!RI_DIR!\data" set "CAND_P_%~1= [portable]"
+exit /b 0
+
+:s5_main
+set "CAND_COUNT=0"
+set "PICK="
+
+REM ---- A. Folder given on the command line: no search, no menu ----
+if defined ARG_VSCODE_DIR (
+    set "AV_DIR=!ARG_VSCODE_DIR!"
+    set "AV_DIR=!AV_DIR:"=!"
+    if "!AV_DIR:~-1!"=="\" set "AV_DIR=!AV_DIR:~0,-1!"
+    if not exist "!AV_DIR!\Code.exe" (
+        echo   [ERROR] --vscode-dir is not a VS Code folder, no Code.exe in:
+        echo   !AV_DIR!
+        pause
+        exit /b 1
+    )
+    call :add_cand "!AV_DIR!"
+    call :read_info !AC_INDEX!
+    set "PICK=!AC_INDEX!"
+    echo   [OK] Using the folder from --vscode-dir.
+    goto :picked
+)
+
+REM ---- B. Collect every install we can find ----
+echo   Searching for VS Code installs...
 for %%D in (
     "C:\Program Files\Microsoft VS Code"
     "C:\Program Files (x86)\Microsoft VS Code"
     "%LOCALAPPDATA%\Programs\Microsoft VS Code"
 ) do (
-    if exist "%%~D\bin\code.cmd" (
-        set "VSCODE_DIR=%%~D"
-        set "VSCODE_CLI=%%~D\bin\code.cmd"
-        goto :vscode_found
-    )
+    call :add_cand "%%~D"
 )
-
-REM 2. code.cmd on PATH
 for /f "delims=" %%I in ('where code.cmd 2^>nul') do (
-    if not defined VSCODE_DIR (
-        set "VSCODE_CLI=%%I"
-        for %%J in ("%%~dpI..") do set "VSCODE_DIR=%%~fJ"
+    for %%J in ("%%~dpI..") do call :add_cand "%%~fJ"
+)
+for /f "delims=" %%I in ('where Code.exe 2^>nul') do (
+    call :add_cand "%%~dpI"
+)
+for /l %%N in (1,1,!CAND_COUNT!) do call :read_info %%N
+echo   VS Code installs found automatically: !CAND_COUNT!
+
+REM ---- C. Menu. Always shown, so a portable install is never skipped ----
+:menu
+echo.
+if "!CAND_COUNT!"=="0" (
+    echo   No VS Code was found automatically.
+) else (
+    for /l %%N in (1,1,!CAND_COUNT!) do (
+        echo   [%%N] !CAND_%%N!!CAND_P_%%N!
+        echo       !CAND_L_%%N!
     )
 )
-if defined VSCODE_DIR goto :vscode_found
-
-REM 3. Ask the user
-echo   [WARN] VS Code not found in common locations or on PATH.
-echo          Enter the path to Code.exe, or to the folder that contains it.
-set /p "VSCODE_EXE=  Path: "
-set "VSCODE_EXE=!VSCODE_EXE:"=!"
-if exist "!VSCODE_EXE!\Code.exe" set "VSCODE_EXE=!VSCODE_EXE!\Code.exe"
-if not exist "!VSCODE_EXE!" (
-    echo   [ERROR] File not found.
-    pause
-    exit /b 1
+echo.
+echo   Choose the VS Code you really use. It must be the one you open
+echo   Remote-SSH from. A portable install is not found automatically.
+if "!CAND_COUNT!"=="1" echo   Press Enter to use [1].
+echo   Type a number, or type a folder path to add another install.
+echo   Type Q to quit.
+set "SEL="
+set /p "SEL=  Choice: "
+if not defined SEL (
+    if "!CAND_COUNT!"=="1" (
+        set "PICK=1"
+        goto :picked
+    )
+    echo   [ERROR] Type a number, a folder path, or Q.
+    goto :menu
 )
-for %%F in ("!VSCODE_EXE!") do set "VSCODE_DIR=%%~dpF"
-set "VSCODE_DIR=!VSCODE_DIR:~0,-1!"
-set "VSCODE_CLI=!VSCODE_DIR!\bin\code.cmd"
+set "SEL=!SEL:"=!"
+if /i "!SEL!"=="Q" exit /b 1
+for /l %%N in (1,1,!CAND_COUNT!) do if "!SEL!"=="%%N" set "PICK=%%N"
+if defined PICK goto :picked
+if "!SEL:~-1!"=="\" set "SEL=!SEL:~0,-1!"
+if not exist "!SEL!\Code.exe" (
+    echo   [ERROR] Not a number from the list, and no Code.exe in that folder.
+    goto :menu
+)
+call :add_cand "!SEL!"
+if "!AC_NEW!"=="1" call :read_info !AC_INDEX!
+set "PICK=!AC_INDEX!"
 
-:vscode_found
+:picked
+for %%I in (!PICK!) do (
+    set "VSCODE_DIR=!CAND_%%I!"
+    set "VSC_VER=!CAND_V_%%I!"
+    set "VSC_COMMIT=!CAND_C_%%I!"
+)
+set "VSCODE_CLI=!VSCODE_DIR!\bin\code.cmd"
 echo   [OK] VS Code: !VSCODE_DIR!
 
 REM Portable mode: VS Code uses a data folder next to Code.exe
@@ -236,57 +395,24 @@ if exist "!VSCODE_DIR!\data" (
     echo   [OK] Installed mode, using the user profile settings.
 )
 
-REM Read version and commit.
-REM Primary: parse product.json directly. Works even when VxKex prevents
-REM Code.exe from running in CLI mode on Windows 7.
-REM The path to product.json may be:
-REM   !VSCODE_DIR!\resources\app\product.json               (standard)
-REM   !VSCODE_DIR!\[short-commit]\resources\app\product.json  (custom layout)
-REM   or elsewhere under VSCODE_DIR.
-REM Fallback: code.cmd --version (works on 1.70.x and Win10/11).
-set "VSC_VER="
-set "VSC_COMMIT="
-set "PRODUCT_JSON="
-
-for /f "delims=" %%P in ('dir /s /b "!VSCODE_DIR!\product.json" 2^>nul') do (
-    if not defined PRODUCT_JSON set "PRODUCT_JSON=%%P"
-)
-
-if defined PRODUCT_JSON (
-    for /f "tokens=2 delims=:," %%A in ('findstr /C:"\"version\"" "!PRODUCT_JSON!"') do (
-        if not defined VSC_VER (
-            set "VSC_VER=%%A"
-            set "VSC_VER=!VSC_VER: =!"
-            set "VSC_VER=!VSC_VER:"=!"
-        )
-    )
-    for /f "tokens=2 delims=:," %%A in ('findstr /C:"\"commit\"" "!PRODUCT_JSON!"') do (
-        if not defined VSC_COMMIT (
-            set "VSC_COMMIT=%%A"
-            set "VSC_COMMIT=!VSC_COMMIT: =!"
-            set "VSC_COMMIT=!VSC_COMMIT:"=!"
-        )
-    )
-)
-
+REM Fallback only: ask the CLI when product.json gave no commit.
+REM Under VxKex the CLI may not start, which is why it comes last.
 if not defined VSC_COMMIT (
     if exist "!VSCODE_CLI!" (
-        echo   Reading VS Code version via code.cmd...
+        echo   product.json gave no commit, trying code.cmd --version...
         set "VSC_N=0"
-        for /f "delims=" %%L in ('""!VSCODE_CLI!" --version 2^>nul"') do (
+        for /f "delims=" %%L in ('""!VSCODE_CLI!" --version"') do (
             set /a VSC_N+=1
             if "!VSC_N!"=="1" set "VSC_VER=%%L"
             if "!VSC_N!"=="2" set "VSC_COMMIT=%%L"
         )
+        if defined VSC_COMMIT (
+            if "!VSC_COMMIT:~39,1!"=="" set "VSC_COMMIT="
+        )
     )
-)
-
-if defined VSC_COMMIT (
-    if "!VSC_COMMIT:~39,1!"=="" set "VSC_COMMIT="
 )
 if defined VSC_COMMIT (
     echo   [OK] VS Code version !VSC_VER!, commit !VSC_COMMIT!
-    if defined PRODUCT_JSON echo        From: !PRODUCT_JSON!
 ) else (
     echo   [WARN] Could not read the VS Code commit.
     echo          Open VS Code, Help, About, and copy the Commit value.
